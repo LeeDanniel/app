@@ -1,0 +1,194 @@
+name: Build From Release IPA
+
+# Builds the tweak from this branch and swaps it into an official NeoFreeBird release IPA,
+# so no separately decrypted X IPA is needed. The release IPA already holds a decrypted X
+# with NeoFreeBird in it; only BHTwitter.dylib and BHTwitter.bundle are replaced.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branding:
+        description: "Which release IPA to start from"
+        default: Twitter
+        required: true
+        type: choice
+        options:
+          - Twitter
+          - X
+      release_ipa_url:
+        description: "(Optional) Direct URL of a NeoFreeBird sideloaded IPA to use instead of the latest release"
+        default: ""
+        required: false
+        type: string
+      sdk_version:
+        description: "iOS SDK Version"
+        default: "16.5"
+        required: true
+        type: string
+      target_version:
+        description: "Target iOS Version"
+        default: "15.0"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build From Release IPA
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Main
+        uses: actions/checkout@v6
+        with:
+          path: main
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: brew install make dpkg ldid
+
+      - name: Add GNU Make to PATH
+        run: |
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Download Theos
+        uses: actions/checkout@v6
+        with:
+          repository: theos/theos
+          ref: master
+          path: theos
+          submodules: recursive
+
+      - name: iOS SDK Caching
+        id: SDK
+        uses: actions/cache@v6
+        env:
+          cache-name: iOS-${{ inputs.sdk_version }}-SDK
+        with:
+          path: theos/sdks/
+          key: ${{ env.cache-name }}
+          restore-keys: ${{ env.cache-name }}
+
+      - name: Download iOS SDK
+        if: steps.SDK.outputs.cache-hit != 'true'
+        run: |
+          git clone -n --depth=1 --filter=tree:0 https://github.com/theos/sdks/
+          cd sdks
+          git sparse-checkout set --no-cone iPhoneOS${{ inputs.sdk_version }}.sdk
+          git checkout
+          mv ./*.sdk "${THEOS}/sdks"
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Download Release IPA
+        id: base
+        run: |
+          set -euo pipefail
+          url="$RELEASE_IPA_URL"
+          if [ -z "$url" ]; then
+            # The latest NeoFreeBird release's sideloaded IPA with the chosen branding.
+            assets=$(gh api repos/NeoFreeBird/app/releases/latest --jq '.assets[] | "\(.name) \(.browser_download_url)"')
+            echo "Release assets:"; echo "$assets"
+            url=$(echo "$assets" | grep -i "sideloaded" | grep -i "\.ipa " | grep -i -- "-$BRANDING-" | head -n1 | awk '{print $2}')
+            if [ -z "$url" ]; then
+              url=$(echo "$assets" | grep -i "sideloaded" | grep -i "\.ipa " | head -n1 | awk '{print $2}')
+            fi
+          fi
+          if [ -z "$url" ]; then
+            echo "::error::No sideloaded IPA found in the latest NeoFreeBird release. Pass release_ipa_url."
+            exit 1
+          fi
+          echo "Using $url"
+          curl -L --fail --silent --show-error -o base.ipa "$url"
+          echo "name=$(basename "$url")" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_IPA_URL: ${{ inputs.release_ipa_url }}
+          BRANDING: ${{ inputs.branding }}
+
+      - name: Compute ffmpeg Cache Key
+        id: ffmpeg-key
+        run: |
+          echo "key=ffmpeg-stack-sdk$(xcrun --sdk iphoneos --show-sdk-version)-$(git -C main rev-parse --short HEAD:deps/ffmpeg-kit-next/upstream)-${{ hashFiles('main/deps/ffmpeg-kit-next/build-ffmpeg.sh') }}" >> "$GITHUB_OUTPUT"
+
+      - name: ffmpeg Stack Caching
+        uses: actions/cache@v6
+        with:
+          path: |
+            ffmpeg-build
+            main/deps/ffmpeg-kit-next/build
+          key: ${{ steps.ffmpeg-key.outputs.key }}
+
+      - name: Build Tweak
+        run: |
+          cd ${{ github.workspace }}/main
+          sed -i '' "s/^TARGET.*$/TARGET := iphone:clang:${{ inputs.sdk_version }}:${{ inputs.target_version }}/" Makefile
+          ./build.sh --sideloaded
+          ls -la .theos/obj/debug/
+        env:
+          THEOS: ${{ github.workspace }}/theos
+          BUILD_DIR: ${{ github.workspace }}/ffmpeg-build
+
+      - name: Swap The Tweak Into The Release IPA
+        run: |
+          set -euo pipefail
+          rm -rf work && mkdir work && cd work
+          unzip -q ../base.ipa
+          app=$(ls -d Payload/*.app | head -n1)
+          old=$(find "$app" -name BHTwitter.dylib | head -n1)
+          if [ -z "$old" ]; then
+            echo "::error::BHTwitter.dylib not found in the release IPA. Dylibs present:"
+            find "$app" -name '*.dylib'
+            exit 1
+          fi
+          echo "Replacing $old"
+          new=../main/.theos/obj/debug/BHTwitter.dylib
+          cp "$new" fresh.dylib
+
+          # The release's copy was adjusted for sideloading (its id and where it loads its hooking
+          # library from). Give the new build the same: same id, and each dependency pointed where
+          # the release's copy points it.
+          echo "Release copy links:"; otool -L "$old"
+          echo "New build links:"; otool -L fresh.dylib
+          old_id=$(otool -D "$old" | tail -n1)
+          install_name_tool -id "$old_id" fresh.dylib
+          old_deps=$(otool -L "$old" | tail -n +2 | awk '{print $1}')
+          for dep in $(otool -L fresh.dylib | tail -n +2 | awk '{print $1}'); do
+            base=$(basename "$dep")
+            match=$(echo "$old_deps" | awk -v b="$base" '{n=split($0,p,"/"); if (p[n]==b) {print; exit}}')
+            if [ -n "$match" ] && [ "$match" != "$dep" ]; then
+              echo "  $dep -> $match"
+              install_name_tool -change "$dep" "$match" fresh.dylib
+            fi
+          done
+          for rp in $(otool -l "$old" | awk '/LC_RPATH/{getline; getline; print $2}'); do
+            install_name_tool -add_rpath "$rp" fresh.dylib 2>/dev/null || true
+          done
+          echo "Adjusted new build links:"; otool -L fresh.dylib
+          codesign -f -s - fresh.dylib
+          mv fresh.dylib "$old"
+
+          bundle=$(find "$app" -type d -name BHTwitter.bundle | head -n1)
+          if [ -n "$bundle" ]; then
+            rm -rf "$bundle"
+            cp -R "../main/layout/Library/Application Support/BHT/BHTwitter.bundle" "$bundle"
+            echo "Replaced $bundle"
+          fi
+
+          out="NeoFreeBird-${GITHUB_REF_NAME//\//-}-$(git -C ../main rev-parse --short HEAD).ipa"
+          zip -qry "../$out" Payload
+          echo "IPA=$out" >> "$GITHUB_ENV"
+          ls -la "../$out"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.IPA }}
+          path: ${{ github.workspace }}/${{ env.IPA }}
+          archive: false
+          if-no-files-found: error
