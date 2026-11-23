@@ -24,7 +24,7 @@ static NSString* const NFBLSProgressNote = @"NFBListSortProgress"; // userInfo: 
 static NSString* const NFBLSDoneNote = @"NFBListSortDone";         // userInfo: listId, lines
 static NSString* const NFBLSSettingsNote = @"NFBListSortSettingsChanged";
 static const NSUInteger NFBLSPageSize = 20;
-static const NSUInteger NFBLSPageCeiling = 250; // a runaway guard, not a limit anyone should reach
+static const NSInteger NFBLSBigPage = 100; // posts asked for per page while scanning (X's own requests ask for fewer)
 static const int64_t NFBLSKeepAliveSeconds = 4;
 
 // Public web bearer token (the same one LocationLabels.x uses; ships in the web client).
@@ -83,6 +83,7 @@ static dispatch_queue_t NFBLSQueue(void) {
 static NSMutableDictionary<NSString*, NSMutableDictionary*>* gScans; // listId -> saved scan
 static NSMutableDictionary<NSString*, id>* gScanning;                // listId -> the scan running for it
 static NSMutableSet<NSString*>* gForced;                             // lists to scan again next time
+static NSMutableSet<NSString*>* gStopping;                           // scans you asked to stop
 static NSMutableArray<NSString*>* gEvents;                           // diagnostics log
 static NSMutableOrderedSet<NSString*>* gOps;                         // GraphQL operations seen
 static NSDictionary* gLastShape;
@@ -92,6 +93,7 @@ static void NFBLSSetUpState(void) {
     gScans = [NSMutableDictionary dictionary];
     gScanning = [NSMutableDictionary dictionary];
     gForced = [NSMutableSet set];
+    gStopping = [NSMutableSet set];
     gEvents = [NSMutableArray array];
     gOps = [NSMutableOrderedSet orderedSet];
 }
@@ -379,6 +381,8 @@ static NSMutableURLRequest* NFBLSWithWebAuth(NSMutableURLRequest* r) {
         _scan[@"pages"] = @1;
         if (split[@"bottom"]) _scan[@"bottom"] = split[@"bottom"];
         _scan[@"windowHours"] = @(window);
+        NSInteger ownCount = [NFBLSVariables(request.URL, body)[@"count"] integerValue];
+        _scan[@"bigPages"] = @(ownCount > 0 && ownCount < NFBLSBigPage);
     }
     return self;
 }
@@ -408,8 +412,11 @@ static NSMutableURLRequest* NFBLSWithWebAuth(NSMutableURLRequest* r) {
         [self finish];
         return;
     }
-    if ((NSUInteger)pages >= NFBLSPageCeiling) {
-        scan[@"stopped"] = [NSString stringWithFormat:@"Stopped after %lu pages.", (unsigned long)NFBLSPageCeiling];
+    // No page limit: it runs until the window is covered, the list ends, X stops answering, or you
+    // press Stop scanning on the list button.
+    if ([gStopping containsObject:_listId]) {
+        [gStopping removeObject:_listId];
+        scan[@"stopped"] = @"Stopped by you.";
         [self finish];
         return;
     }
@@ -419,8 +426,17 @@ static NSMutableURLRequest* NFBLSWithWebAuth(NSMutableURLRequest* r) {
         [self finish];
         return;
     }
+    // Fewer, bigger pages, unless X refuses them.
+    BOOL big = [scan[@"bigPages"] boolValue];
+    if (big) r = NFBLSRequestWithVariable(r, r.HTTPBody, @"count", @(NFBLSBigPage)) ?: r;
     if ([scan[@"webAuth"] boolValue]) r = NFBLSWithWebAuth(r);
     NFBLSFetch(r, ^(NSData* data, NSHTTPURLResponse* http, NSError* error) {
+        if (big && !error && http.statusCode != 200) {
+            NFBLSEvent([NSString stringWithFormat:@"  pages of %ld refused (%ld): back to X's own page size", (long)NFBLSBigPage, (long)http.statusCode]);
+            scan[@"bigPages"] = @NO;
+            [self step];
+            return;
+        }
         if (error || http.statusCode != 200) {
             NSInteger code = http.statusCode;
             if ((code == 401 || code == 403) && ![scan[@"triedWeb"] boolValue] && NFBLSHaveWebSession()) {
@@ -1073,7 +1089,22 @@ static UIMenu* NFBLSMenu(void) {
                                        reposts,
                                        onePer,
                                    ]];
-    UIMenu* tools = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[rescan, about]];
+    NSMutableArray* toolItems = [NSMutableArray arrayWithObjects:rescan, about, nil];
+    if (gButtonProgress) {
+        UIAction* stop = [UIAction actionWithTitle:@"Stop scanning"
+                                             image:[UIImage systemImageNamed:@"stop.circle"]
+                                        identifier:nil
+                                           handler:^(UIAction* a) {
+                                               dispatch_async(NFBLSQueue(), ^{
+                                                   if (listId) [gStopping addObject:listId];
+                                                   NFBLSEvent([NSString stringWithFormat:@"stop asked for list %@", NFBLSShortID(listId)]);
+                                               });
+                                               NFBLSToast(@"Stopping after this page. What has loaded so far will be sorted.");
+                                           }];
+        stop.attributes = UIMenuElementAttributesDestructive;
+        [toolItems insertObject:stop atIndex:0];
+    }
+    UIMenu* tools = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:toolItems];
     return [UIMenu menuWithTitle:@"List order" image:nil identifier:nil options:0 children:@[order, options, tools]];
 }
 
