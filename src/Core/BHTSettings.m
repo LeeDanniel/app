@@ -87,6 +87,12 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                 @"titleKey": @"MODERN_SETTINGS_TIMELINES_TITLE",
                 @"subtitleKey": @"MODERN_SETTINGS_TIMELINES_SUBTITLE",
                 @"settings": @[
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"list_sorting_page",
+                        @"titleKey": @"LIST_SORTING_OPEN_TITLE",
+                        @"action": @"showListSortSettings:"
+                    },
                     @{@"key": @"hide_who_to_follow",
                       @"default": @YES},
                     @{@"key": @"hide_timeline_prompts",
@@ -118,6 +124,53 @@ static NSDictionary<NSString*, NSDictionary*>* BHTSettingsPages(void) {
                       @"default": @NO},
                     @{@"key": @"restore_refresh_sounds",
                       @"default": @YES}
+                ]
+            },
+            @"list_sorting": @{
+                @"titleKey": @"MODERN_SETTINGS_LIST_SORTING_TITLE",
+                @"subtitleKey": @"MODERN_SETTINGS_LIST_SORTING_SUBTITLE",
+                @"settings": @[
+                    @{@"key": @"list_sort_popular",
+                      @"default": @NO},
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"list_sort_metric",
+                        @"default": @0,
+                        @"titleKey": @"LIST_SORT_METRIC_TITLE",
+                        @"action": @"showListSortMetricPicker:"
+                    },
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"list_sort_window",
+                        @"default": @72,
+                        @"titleKey": @"LIST_SORT_WINDOW_TITLE",
+                        @"action": @"showListSortWindowPicker:"
+                    },
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"list_sort_show",
+                        @"default": @0,
+                        @"titleKey": @"LIST_SORT_SHOW_TITLE",
+                        @"action": @"showListSortShowPicker:"
+                    },
+                    @{@"key": @"list_sort_reposts",
+                      @"default": @YES},
+                    @{@"key": @"list_sort_one_per_account",
+                      @"default": @NO},
+                    @{@"key": @"list_sort_button",
+                      @"default": @YES},
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"list_sort_forget",
+                        @"titleKey": @"LIST_SORT_FORGET_TITLE",
+                        @"action": @"forgetListSortScans:"
+                    },
+                    @{
+                        @"type": @"compactButton",
+                        @"key": @"list_sort_diagnostics",
+                        @"titleKey": @"LIST_SORT_DIAGNOSTICS_TITLE",
+                        @"action": @"copyListSortDiagnostics:"
+                    }
                 ]
             },
             @"grok": @{

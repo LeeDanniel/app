@@ -7,6 +7,7 @@
 
 #import "Settings/Pages/TimelinesSettingsViewController.h"
 #import "Headers/TWHeaders.h"
+#import "Settings/Pages/ListSortSettingsViewController.h"
 
 extern void applyHideCustomTimelinesSetting(void);
 
@@ -22,6 +23,11 @@ extern void applyHideCustomTimelinesSetting(void);
     if ([key isEqualToString:@"hide_custom_timelines"]) {
         applyHideCustomTimelinesSetting();
     }
+}
+
+- (void)showListSortSettings:(NSDictionary*)sender {
+    ListSortSettingsViewController* vc = [[ListSortSettingsViewController alloc] initWithAccount:self.account];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 @end

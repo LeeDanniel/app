@@ -383,3 +383,23 @@
 "COMPOSITION_COMPLETE_SENDING_TWEET_TOAST_NOTIFICATION_MESSAGE" = "Your reply has been sent!";
 "DM_MESSAGE_ACTION_OPEN_GENERIC_TITLE" = "Open Tweet";
 "DISMISS_LABEL" = "Dismiss";
+
+/* List sorting */
+"LIST_SORTING_OPEN_TITLE" = "List sorting";
+"MODERN_SETTINGS_LIST_SORTING_TITLE" = "List sorting";
+"MODERN_SETTINGS_LIST_SORTING_SUBTITLE" = "Show lists sorted by popularity, like the Following tab. A list is scanned back to the time window the first time you open it, then the saved scan is re-sorted when you change these settings. The button on each list has the same choices.";
+"LIST_SORT_POPULAR_TITLE" = "Popular order";
+"LIST_SORT_POPULAR_DETAIL" = "Lists open sorted by the ranking below instead of newest first.";
+"LIST_SORT_METRIC_TITLE" = "Rank by";
+"LIST_SORT_WINDOW_TITLE" = "Within";
+"LIST_SORT_SHOW_TITLE" = "Show";
+"LIST_SORT_REPOSTS_TITLE" = "Reposts";
+"LIST_SORT_REPOSTS_DETAIL" = "Include reposts. They are ranked by the original post's numbers.";
+"LIST_SORT_ONE_PER_ACCOUNT_TITLE" = "One per account";
+"LIST_SORT_ONE_PER_ACCOUNT_DETAIL" = "Only each account's top post.";
+"LIST_SORT_BUTTON_TITLE" = "Button on lists";
+"LIST_SORT_BUTTON_DETAIL" = "A small button at the bottom of each list to switch between Latest and Popular and change these settings.";
+"LIST_SORT_FORGET_TITLE" = "Forget saved scans";
+"LIST_SORT_FORGET_DONE" = "Each list will be scanned again the next time you open it, for fresh like and view counts.";
+"LIST_SORT_DIAGNOSTICS_TITLE" = "Copy list sorting diagnostics";
+"LIST_SORT_DIAGNOSTICS_DONE" = "Copied. It has operation names, response field names and counts, never post text. Paste it in your bug report.";

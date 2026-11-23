@@ -31,3 +31,10 @@ xcrun --sdk macosx clang -fobjc-arc -fblocks -Isrc \
     -o "$TEST_DIR/TerminologyTests"
 
 "$TEST_DIR/TerminologyTests"
+
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Isrc \
+    -framework Foundation \
+    tests/ListSortEngineTests.m src/ListSort/NFBListSortEngine.m \
+    -o "$TEST_DIR/ListSortEngineTests"
+
+"$TEST_DIR/ListSortEngineTests"
